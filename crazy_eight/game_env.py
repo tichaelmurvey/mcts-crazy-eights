@@ -1,7 +1,8 @@
 from itertools import permutations, product
 from random import shuffle
+from typing import Literal
 
-from c8_env.types import Card, CardValue, Player, Suit
+from crazy_eight.types import Card, CardValue, Player, Suit
 
 
 class CrazyEightGame:
@@ -12,9 +13,11 @@ class CrazyEightGame:
     draw_two_mult: int
     winner: int | None
     legal_moves: list[list[Card]]
+    crazy: int
 
-    def __init__(self, n_players: int = 2) -> None:
-        self.players = [Player(hand=[], crazy=8) for _ in range(n_players)]
+    def __init__(self, n_players: int = 2, crazy: int = 8) -> None:
+        self.crazy = crazy
+        self.players = [Player(hand=[], crazy=self.crazy) for _ in range(n_players)]
         self.current_player = self.players[0]
         self.deck = setup_deck()
         self.discard = []
@@ -66,35 +69,48 @@ class CrazyEightGame:
 
     def deal(self):
         for player in self.players:
-            self.draw_n(player, 8)
+            self.draw_n(player, self.crazy)
         self.discard.append(self.deck.pop())
 
     def draw_n(self, player: Player, num_cards: int):
-        draw = self.deck[-num_cards:]
-        del self.deck[-num_cards:]
-        player.hand += draw
+        for _ in range(num_cards):
+            if len(self.deck) is 0:
+                if len(self.discard) > 1:
+                    new_discard = self.discard.pop()
+                    self.deck = self.discard
+                    self.discard = [new_discard]
+                else:
+                    return
+
+            player.hand.append(self.deck.pop())
         player.hand.sort(key=lambda card: card.cvalue)
 
-    def play_card(self, cards_idx: list[int]):
-        cards_to_play: list[Card] = []
-        for idx in cards_idx:
-            cards_to_play.append(self.current_player.hand.pop(idx))
-        self.discard += cards_to_play
+    def resolve_move(self, move: list[Card] | None):
+        if move is None:
+            self.draw_n(self.current_player, 1)
+        else:
+            self.play_cards(move)
+        self.advance_turn()
+
+    def play_cards(self, cards: list[Card]):
+        for card in cards:
+            self.current_player.hand.remove(card)
+        self.discard += cards
 
         if len(self.current_player.hand) is 0:
             self.reduce_crazy()
 
-        if cards_to_play[0].cvalue == CardValue.TWO:
+        if cards[0].cvalue == CardValue.TWO:
             self.two_effect()
+        else:
+            self.draw_two_mult = 1
 
-        if cards_to_play[0].cvalue == CardValue.JACK:
+        if cards[0].cvalue == CardValue.JACK:
             self.advance_turn()
 
-        for card in cards_to_play:
+        for card in cards:
             if card.cvalue == CardValue.QUEEN and card.suit == Suit.SPADES:
                 self.draw_n(self.next_player(), 5)
-
-        self.advance_turn()
 
     def next_player(self):
         player_idx = self.players.index(self.current_player)
@@ -102,7 +118,7 @@ class CrazyEightGame:
         next_player_idx = player_idx + 1
         if next_player_idx >= len(self.players):
             next_player_idx = 0
-        return self.players[player_idx]
+        return self.players[next_player_idx]
 
     def advance_turn(self):
         self.current_player = self.next_player()
@@ -124,10 +140,14 @@ class CrazyEightGame:
         print("===== GAME STATE =====")
         for i, player in enumerate(self.players):
             print(f"Player {i}: Crazy {player.crazy}")
+            hand_str = ""
             for card in player.hand:
-                print(f"    {card.cvalue.name} of {card.suit.name}")
+                hand_str += f"{card.cvalue.name} of {card.suit.name}, "
+            print(hand_str)
             print()
         discard = self.discard[-1]
+        print(f"Deck size: {len(self.deck)}")
+        print(f"Discard size: {len(self.discard)}")
         print(f"Discard top card: {discard.cvalue.name} of {discard.suit.name}")
 
     def print_legal_moves(self):

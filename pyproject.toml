@@ -1,5 +1,5 @@
 [project]
-name = "c8_env"
+name = "crazy_eight"
 version = "0.1.0"
 
 [build-system]
