@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Crazy Eights</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="game.css" />
+    <script src="jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+</head>
+
+<body>
+    <h1>Crazy Eights</h1>
+
+    <div id="loading">
+        <p>Loading Python runtime...</p>
+        <div class="spinner"></div>
+    </div>
+
+    <div id="game-container" style="display: none;">
+        <div id="info-bar">
+            <div id="opponent-info">
+                <span id="opponent-cards">Computer: 0 cards</span>
+                <span id="opponent-wild">Wild: 8</span>
+            </div>
+            <div id="player-info">
+                <span id="player-wild">Your Wild: 8</span>
+            </div>
+        </div>
+
+        <div id="card-table">
+            <div id="status-message"></div>
+        </div>
+
+        <div id="controls">
+            <button id="deal-btn">Deal Cards</button>
+            <button id="draw-btn" style="display: none;">Draw Card</button>
+            <button id="new-game-btn" style="display: none;">New Game</button>
+        </div>
+
+        <div id="move-selection" style="display: none;">
+            <h3>Select cards to play:</h3>
+            <div id="move-options"></div>
+            <button id="confirm-move-btn">Play Selected</button>
+            <button id="cancel-move-btn">Cancel</button>
+        </div>
+    </div>
+
+    <div id="rules">
+        <h3>Rules</h3>
+        <ul>
+            <li>Match the suit or value of the top discard card</li>
+            <li>8s are wild (can be played on anything)</li>
+            <li>2s make the next player draw 2 cards</li>
+            <li>Jacks skip the next player's turn</li>
+            <li>Queen of Spades makes next player draw 5 cards</li>
+            <li>Empty your hand to reduce your wild number</li>
+            <li>First to play all cards when wild=1 (Ace) wins!</li>
+        </ul>
+    </div>
+    <script src="ex_game.js"></script>
+</body>
+
+</html>
