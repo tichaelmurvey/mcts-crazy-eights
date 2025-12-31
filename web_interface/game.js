@@ -131,19 +131,43 @@ function renderGameState(gameState) {
         // Click to select/deselect
         cardEl.addEventListener('click', () => toggleCardSelection(cardEl, index));
 
-        // Drag and drop for reordering
-        cardEl.draggable = true;
-        cardEl.addEventListener('dragstart', handleDragStart);
-        cardEl.addEventListener('dragover', handleDragOver);
-        cardEl.addEventListener('dragleave', handleDragLeave);
-        cardEl.addEventListener('drop', handleDrop);
-        cardEl.addEventListener('dragend', handleDragEnd);
-
         playerHandDiv.appendChild(cardEl);
     });
 
     handContainer.appendChild(playerHandDiv);
     playerControls.appendChild(handContainer);
+
+    // Initialize SortableJS for drag reordering
+    new Sortable(playerHandDiv, {
+        animation: 150,
+        ghostClass: 'dragging',
+        onEnd: function(evt) {
+            const oldIndex = evt.oldIndex;
+            const newIndex = evt.newIndex;
+
+            if (oldIndex !== newIndex) {
+                // Reorder the playerHand array
+                const [movedCard] = playerHand.splice(oldIndex, 1);
+                playerHand.splice(newIndex, 0, movedCard);
+
+                // Update selected cards indices
+                selectedCards = selectedCards.map(idx => {
+                    if (idx === oldIndex) return newIndex;
+                    if (oldIndex < newIndex) {
+                        if (idx > oldIndex && idx <= newIndex) return idx - 1;
+                    } else {
+                        if (idx >= newIndex && idx < oldIndex) return idx + 1;
+                    }
+                    return idx;
+                });
+
+                // Update data-index attributes
+                playerHandDiv.querySelectorAll('.card').forEach((el, i) => {
+                    el.dataset.index = i;
+                });
+            }
+        }
+    });
 
     // Play button
     const playBtn = document.createElement('button');
@@ -193,65 +217,6 @@ function toggleCardSelection(cardEl, index) {
     playBtn.disabled = selectedCards.length === 0;
 }
 
-// Drag and drop handlers for reordering cards
-let draggedIndex = null;
-
-function handleDragStart(e) {
-    draggedIndex = parseInt(e.target.dataset.index);
-    e.target.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-}
-
-function handleDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const target = e.target.closest('.card');
-    if (target && !target.classList.contains('dragging')) {
-        target.classList.add('drag-over');
-    }
-}
-
-function handleDragLeave(e) {
-    const target = e.target.closest('.card');
-    if (target) {
-        target.classList.remove('drag-over');
-    }
-}
-
-function handleDrop(e) {
-    e.preventDefault();
-    const target = e.target.closest('.card');
-    if (target) {
-        target.classList.remove('drag-over');
-        const dropIndex = parseInt(target.dataset.index);
-
-        if (draggedIndex !== dropIndex) {
-            // Reorder the hand
-            const [movedCard] = playerHand.splice(draggedIndex, 1);
-            playerHand.splice(dropIndex, 0, movedCard);
-
-            // Update selected cards indices
-            selectedCards = selectedCards.map(idx => {
-                if (idx === draggedIndex) return dropIndex;
-                if (draggedIndex < dropIndex) {
-                    if (idx > draggedIndex && idx <= dropIndex) return idx - 1;
-                } else {
-                    if (idx >= dropIndex && idx < draggedIndex) return idx + 1;
-                }
-                return idx;
-            });
-
-            // Re-render just the player hand
-            rerenderPlayerHand();
-        }
-    }
-}
-
-function handleDragEnd(e) {
-    e.target.classList.remove('dragging');
-    document.querySelectorAll('.card.drag-over').forEach(el => el.classList.remove('drag-over'));
-    draggedIndex = null;
-}
 
 function rerenderPlayerHand() {
     const playerHandDiv = document.getElementById('player-hand');
@@ -266,14 +231,37 @@ function rerenderPlayerHand() {
         }
 
         cardEl.addEventListener('click', () => toggleCardSelection(cardEl, index));
-        cardEl.draggable = true;
-        cardEl.addEventListener('dragstart', handleDragStart);
-        cardEl.addEventListener('dragover', handleDragOver);
-        cardEl.addEventListener('dragleave', handleDragLeave);
-        cardEl.addEventListener('drop', handleDrop);
-        cardEl.addEventListener('dragend', handleDragEnd);
 
         playerHandDiv.appendChild(cardEl);
+    });
+
+    // Re-initialize SortableJS
+    new Sortable(playerHandDiv, {
+        animation: 150,
+        ghostClass: 'dragging',
+        onEnd: function(evt) {
+            const oldIndex = evt.oldIndex;
+            const newIndex = evt.newIndex;
+
+            if (oldIndex !== newIndex) {
+                const [movedCard] = playerHand.splice(oldIndex, 1);
+                playerHand.splice(newIndex, 0, movedCard);
+
+                selectedCards = selectedCards.map(idx => {
+                    if (idx === oldIndex) return newIndex;
+                    if (oldIndex < newIndex) {
+                        if (idx > oldIndex && idx <= newIndex) return idx - 1;
+                    } else {
+                        if (idx >= newIndex && idx < oldIndex) return idx + 1;
+                    }
+                    return idx;
+                });
+
+                playerHandDiv.querySelectorAll('.card').forEach((el, i) => {
+                    el.dataset.index = i;
+                });
+            }
+        }
     });
 }
 
@@ -299,7 +287,7 @@ async function attemptPlayMove() {
 
     // Build Python-compatible card list
     const cardListStr = cardsToPlay.map(c =>
-        `player.Card(player.Suit.${c.suit}, player.CardValue.${c.value})`
+        `player.Card(suit=player.Suit.${c.suit}, cvalue=player.CardValue.${c.value})`
     ).join(', ');
 
     // Attempt the move
@@ -397,7 +385,7 @@ function opponentTurn() {
     setTimeout(() => {
         // The opponent plays - this needs proper backend support
         // For demo, just draw a card
-        pyodide.runPython('player.attempt_move(None)');
+        pyodide.runPython('player.random_move()');
 
         hideStatus();
         const gameStateJson = pyodide.runPython('player.get_game_state_json()');

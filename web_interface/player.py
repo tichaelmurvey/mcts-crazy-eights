@@ -1,6 +1,7 @@
 import json
+from random import choice
 from crazy_eight.game_env import CrazyEightGame
-from crazy_eight.types import Card
+from crazy_eight.types import Card, CardValue, Suit
 
 game = CrazyEightGame(crazy=8)
 
@@ -48,6 +49,12 @@ def get_game_state_json():
     print("game state from player.py")
     print(state)
     return json.dumps(state)
+
+
+def random_move():
+    move = choice(game.legal_moves) if len(game.legal_moves) > 0 else None
+    game.resolve_move(move)
+    game.get_legal_moves()
 
 
 def attempt_move(move: list[Card] | None):
