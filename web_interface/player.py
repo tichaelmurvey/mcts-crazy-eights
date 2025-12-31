@@ -57,6 +57,10 @@ def random_move():
     game.get_legal_moves()
 
 
+def validate_move(move: list[Card]):
+    return move in game.legal_moves
+
+
 def attempt_move(move: list[Card] | None):
     """Attempt move, determine legality and resolve gamestate"""
     if move is None or move in game.legal_moves:

@@ -165,6 +165,9 @@ function renderGameState(gameState) {
                 playerHandDiv.querySelectorAll('.card').forEach((el, i) => {
                     el.dataset.index = i;
                 });
+
+                // Re-validate after reorder
+                updatePlayButtonState();
             }
         }
     });
@@ -212,9 +215,28 @@ function toggleCardSelection(cardEl, index) {
         cardEl.classList.remove('selected');
     }
 
-    // Update play button state
+    updatePlayButtonState();
+}
+
+function updatePlayButtonState() {
     const playBtn = document.getElementById('play-btn');
-    playBtn.disabled = selectedCards.length === 0;
+
+    if (selectedCards.length === 0) {
+        playBtn.disabled = true;
+        return;
+    }
+
+    // Get selected cards in hand order (left to right)
+    const sortedIndices = [...selectedCards].sort((a, b) => a - b);
+    const cardsToPlay = sortedIndices.map(i => playerHand[i]);
+
+    // Build Python-compatible card list and validate
+    const cardListStr = cardsToPlay.map(c =>
+        `player.Card(suit=player.Suit.${c.suit}, cvalue=player.CardValue.${c.value})`
+    ).join(', ');
+
+    const isValid = pyodide.runPython(`player.validate_move([${cardListStr}])`);
+    playBtn.disabled = !isValid;
 }
 
 
@@ -260,6 +282,9 @@ function rerenderPlayerHand() {
                 playerHandDiv.querySelectorAll('.card').forEach((el, i) => {
                     el.dataset.index = i;
                 });
+
+                // Re-validate after reorder
+                updatePlayButtonState();
             }
         }
     });
