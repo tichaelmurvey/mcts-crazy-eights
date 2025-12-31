@@ -36,24 +36,24 @@ function getCardSvgId(card) {
         'HEARTS': 'heart', 'SPADES': 'spade', 'DIAMONDS': 'diamond', 'CLUBS': 'club'
     };
 
+
+
     const value = valueMap[card.value];
     const suit = suitMap[card.suit];
-    return `${value}_${suit}`;
+    return `img/cards/${suit}_${value}.png`;
 }
 
 function createCardElement(card, isBack = false) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
-
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 169 245');
-
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    const spriteId = isBack ? 'back' : getCardSvgId(card);
-    use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', `img/svg-cards.svg#${spriteId}`);
-
-    svg.appendChild(use);
-    cardDiv.appendChild(svg);
+    const img = document.createElement("img");
+    if (isBack) {
+        img.setAttribute("src", "img/cards/back-blue.png")
+    }
+    if (card) {
+        img.setAttribute("src", getCardSvgId(card))
+    }
+    cardDiv.appendChild(img);
 
     if (!isBack && card) {
         cardDiv.dataset.suit = card.suit;
