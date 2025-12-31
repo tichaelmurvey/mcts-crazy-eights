@@ -52,9 +52,13 @@ def get_game_state_json():
 
 
 def random_move():
+    """Execute a random legal move and return the cards played as JSON."""
     move = choice(game.legal_moves) if len(game.legal_moves) > 0 else None
     game.resolve_move(move)
     game.get_legal_moves()
+    if move is None:
+        return json.dumps(None)
+    return json.dumps([c.to_dict() for c in move])
 
 
 def validate_move(move: list[Card]):
@@ -62,7 +66,7 @@ def validate_move(move: list[Card]):
 
 
 def attempt_move(move: list[Card] | None):
-    """Attempt move, determine legality and resolve gamestate"""
+    """Attempt move, determine legality and resolve gamestate."""
     if move is None or move in game.legal_moves:
         game.resolve_move(move)
         game.get_legal_moves()

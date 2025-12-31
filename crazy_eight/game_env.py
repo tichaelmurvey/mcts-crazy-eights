@@ -35,14 +35,14 @@ class CrazyEightGame:
 
         for active_card in self.current_player.hand:
             if (
-                active_card.suit is self.top_card.suit
-                or active_card.cvalue.value is self.current_player.crazy
+                active_card.suit == self.top_card.suit
+                or active_card.cvalue.value == self.current_player.crazy
             ):
                 legal_moves.append([active_card])
                 cardset = list(
                     filter(
-                        lambda card: card.cvalue is active_card.cvalue
-                        and card is not active_card,
+                        lambda card, ac=active_card: card.cvalue == ac.cvalue
+                        and card is not ac,
                         self.current_player.hand,
                     )
                 )
@@ -55,14 +55,14 @@ class CrazyEightGame:
 
                 cardset = list(
                     filter(
-                        lambda card: card.cvalue is self.top_card.cvalue,
+                        lambda card: card.cvalue == self.top_card.cvalue,
                         self.current_player.hand,
                     )
                 )
 
         same_val = list(
             filter(
-                lambda card: card.cvalue is self.top_card.cvalue,
+                lambda card: card.cvalue == self.top_card.cvalue,
                 self.current_player.hand,
             )
         )
@@ -80,7 +80,7 @@ class CrazyEightGame:
 
     def draw_n(self, player: Player, num_cards: int):
         for _ in range(num_cards):
-            if len(self.deck) is 0:
+            if len(self.deck) == 0:
                 if len(self.discard) > 1:
                     new_discard = self.discard.pop()
                     self.deck = self.discard
@@ -103,7 +103,7 @@ class CrazyEightGame:
             self.current_player.hand.remove(card)
         self.discard += cards
         self.top_card = self.discard[-1]
-        if len(self.current_player.hand) is 0:
+        if len(self.current_player.hand) == 0:
             self.reduce_crazy()
 
         if cards[0].cvalue == CardValue.TWO:

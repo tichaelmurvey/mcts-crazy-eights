@@ -129,8 +129,16 @@ h1 {
 	cursor: pointer;
 }
 
+.deck:hover .card {
+	transform: scale(1.05);
+}
+
 .deck .card {
 	box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.5);
+}
+
+.discard .card {
+	cursor: default;
 }
 
 /* Stack effect for deck */
@@ -273,8 +281,7 @@ button:active {
 
 /* Animation classes */
 .card.animating {
-	transition: all 0.4s ease;
-	position: fixed;
+	transition: transform 0.4s ease;
 	z-index: 1000;
 }
 

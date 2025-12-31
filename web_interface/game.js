@@ -1,32 +1,109 @@
 let pyodide = null;
-let selectedCards = [];
-let playerHand = [];
+let opponentHandSize = 0;
+
+const ANIMATION_DURATION = 400;
+
+// Hand object - source of truth for player's hand in JS
+// Each entry: { suit, value, selected }
+let hand = [];
+
+function cardKey(card) {
+    return `${card.suit}_${card.value}`;
+}
+
+function getSelectedCards() {
+    return hand.filter(c => c.selected);
+}
+
+function syncHand(gameStateHand) {
+    // Build count map of cards in new game state
+    const newCounts = new Map();
+    for (const card of gameStateHand) {
+        const key = cardKey(card);
+        newCounts.set(key, (newCounts.get(key) || 0) + 1);
+    }
+
+    // Build count map of current hand
+    const currentCounts = new Map();
+    for (const card of hand) {
+        const key = cardKey(card);
+        currentCounts.set(key, (currentCounts.get(key) || 0) + 1);
+    }
+
+    // Remove cards that are no longer in game state
+    const newHand = [];
+    const usedCounts = new Map();
+    for (const card of hand) {
+        const key = cardKey(card);
+        const used = usedCounts.get(key) || 0;
+        const available = newCounts.get(key) || 0;
+        if (used < available) {
+            newHand.push(card);
+            usedCounts.set(key, used + 1);
+        }
+    }
+
+    // Find cards to add (in game state but not in our hand)
+    const cardsToAdd = [];
+    const handCounts = new Map();
+    for (const card of newHand) {
+        const key = cardKey(card);
+        handCounts.set(key, (handCounts.get(key) || 0) + 1);
+    }
+    for (const card of gameStateHand) {
+        const key = cardKey(card);
+        const inHand = handCounts.get(key) || 0;
+        if (inHand === 0) {
+            cardsToAdd.push({ suit: card.suit, value: card.value, selected: false });
+            handCounts.set(key, 1);
+        } else {
+            handCounts.set(key, inHand - 1);
+        }
+    }
+
+    hand = newHand;
+    return cardsToAdd;
+}
+
+// --- Initialization ---
 
 async function main() {
     pyodide = await loadPyodide();
     await pyodide.loadPackage("micropip");
     const micropip = await pyodide.pyimport("micropip");
     await micropip.install("crazy_eight-0.1.0-py3-none-any.whl");
-    const testCode = await fetch("player.py").then(r => r.text());
-    await pyodide.FS.writeFile("/home/pyodide/player.py", testCode);
+    const playerCode = await fetch("player.py").then(r => r.text());
+    await pyodide.FS.writeFile("/home/pyodide/player.py", playerCode);
     await pyodide.runPython("import player; player.say_hello()");
-
-    const gameStateJson = pyodide.runPython('player.get_game_state_json()');
-    console.log(gameStateJson);
-    renderGameState(JSON.parse(gameStateJson));
+    refreshGameState(true);
 }
 
 function new_game() {
-    console.log("starting new game")
-    pyodide.runPython("player.start_game()")
-    const gameStateJson = pyodide.runPython('player.get_game_state_json()');
-    renderGameState(JSON.parse(gameStateJson));
+    hand = [];
+    opponentHandSize = 0;
+    pyodide.runPython("player.start_game()");
+    refreshGameState(true);
 }
 
-function getCardSvgId(card) {
-    // Convert card value/suit to SVG sprite ID
-    // Values: ACE, TWO, THREE... -> 1, 2, 3...
-    // Suits: HEARTS, SPADES, DIAMONDS, CLUBS -> heart, spade, diamond, club
+async function refreshGameState(skipAnimations = false) {
+    const gameStateJson = pyodide.runPython('player.get_game_state_json()');
+    const gameState = JSON.parse(gameStateJson);
+
+    if (skipAnimations) {
+        // Sync hand without animation
+        const cardsToAdd = syncHand(gameState.player_hand);
+        for (const card of cardsToAdd) {
+            hand.push(card);
+        }
+        opponentHandSize = gameState.opponent_hand.length;
+    }
+
+    await renderGameState(gameState, skipAnimations);
+}
+
+// --- Card Utilities ---
+
+function getCardImagePath(card) {
     const valueMap = {
         'ACE': '1', 'TWO': '2', 'THREE': '3', 'FOUR': '4', 'FIVE': '5',
         'SIX': '6', 'SEVEN': '7', 'EIGHT': '8', 'NINE': '9', 'TEN': '10',
@@ -35,39 +112,83 @@ function getCardSvgId(card) {
     const suitMap = {
         'HEARTS': 'heart', 'SPADES': 'spade', 'DIAMONDS': 'diamond', 'CLUBS': 'club'
     };
-
-
-
-    const value = valueMap[card.value];
-    const suit = suitMap[card.suit];
-    return `img/cards/${suit}_${value}.png`;
+    return `img/cards/${suitMap[card.suit]}_${valueMap[card.value]}.png`;
 }
 
 function createCardElement(card, isBack = false) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
     const img = document.createElement("img");
-    if (isBack) {
-        img.setAttribute("src", "img/cards/back-blue.png")
-    }
-    if (card) {
-        img.setAttribute("src", getCardSvgId(card))
-    }
+    img.src = isBack ? "img/cards/back-blue.png" : getCardImagePath(card);
     cardDiv.appendChild(img);
 
     if (!isBack && card) {
         cardDiv.dataset.suit = card.suit;
         cardDiv.dataset.value = card.value;
     }
-
     return cardDiv;
 }
 
-function renderGameState(gameState) {
-    console.log("rendering game state")
-    console.log(gameState)
-    selectedCards = [];
-    playerHand = [...gameState.player_hand];
+function cardsToPythonExpr(cards) {
+    return cards.map(c =>
+        `player.Card(suit=player.Suit.${c.suit}, cvalue=player.CardValue.${c.value})`
+    ).join(', ');
+}
+
+// --- Animation ---
+
+function animateCard(cardEl, targetRect, onComplete) {
+    const startRect = cardEl.getBoundingClientRect();
+    const deltaX = targetRect.left - startRect.left;
+    const deltaY = targetRect.top - startRect.top;
+
+    cardEl.classList.add('animating');
+    cardEl.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    cardEl.style.zIndex = '1000';
+
+    setTimeout(() => {
+        cardEl.remove();
+        onComplete?.();
+    }, ANIMATION_DURATION);
+}
+
+function animateCardAsync(cardEl, targetRect) {
+    return new Promise(resolve => animateCard(cardEl, targetRect, resolve));
+}
+
+async function animateNewCardTo(targetEl) {
+    const deckEl = document.getElementById('deck');
+    const deckCard = deckEl.querySelector('.card');
+    const deckRect = deckCard.getBoundingClientRect();
+    const targetRect = targetEl.getBoundingClientRect();
+
+    const deltaX = (targetRect.left + targetRect.width / 2) - deckRect.left;
+    const deltaY = targetRect.top - deckRect.top;
+
+    const animCard = createCardElement(null, true);
+    deckEl.appendChild(animCard);
+    animCard.style.position = 'absolute';
+    animCard.style.top = '0';
+    animCard.style.left = '0';
+
+    // Force reflow then animate
+    animCard.offsetHeight;
+    animCard.classList.add('animating');
+    animCard.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+
+    await new Promise(resolve => setTimeout(() => {
+        animCard.remove();
+        resolve();
+    }, ANIMATION_DURATION));
+}
+
+// --- Rendering ---
+
+async function renderGameState(gameState, skipAnimations = false) {
+    // Sync hand and get cards to add
+    const cardsToAdd = skipAnimations ? [] : syncHand(gameState.player_hand);
+    const opponentCardsToAdd = skipAnimations ? 0 : Math.max(0, gameState.opponent_hand.length - opponentHandSize);
+    const opponentCardsToShow = gameState.opponent_hand.length - opponentCardsToAdd;
 
     // Update info bar
     document.getElementById('opponent-cards').textContent = `Computer: ${gameState.opponent_hand.length} cards`;
@@ -81,36 +202,31 @@ function renderGameState(gameState) {
     // Opponent hand (card backs)
     const opponentHand = document.createElement('div');
     opponentHand.className = 'hand opponent';
-    gameState.opponent_hand.forEach(() => {
+    for (let i = 0; i < opponentCardsToShow; i++) {
         const card = createCardElement(null, true);
         card.style.cursor = 'default';
         opponentHand.appendChild(card);
-    });
+    }
     cardTable.appendChild(opponentHand);
 
     // Center area with deck and discard
     const centerArea = document.createElement('div');
     centerArea.className = 'center-area';
 
-    // Deck
     const deck = document.createElement('div');
     deck.className = 'deck';
     deck.id = 'deck';
-    const deckCard = createCardElement(null, true);
-    deck.appendChild(deckCard);
-    deck.addEventListener('click', () => drawCard());
+    deck.appendChild(createCardElement(null, true));
+    deck.addEventListener('click', drawCard);
     centerArea.appendChild(deck);
 
-    // Discard pile
     const discard = document.createElement('div');
     discard.className = 'discard';
     discard.id = 'discard';
     if (gameState.top_card) {
-        const discardCard = createCardElement(gameState.top_card);
-        discard.appendChild(discardCard);
+        discard.appendChild(createCardElement(gameState.top_card));
     }
     centerArea.appendChild(discard);
-
     cardTable.appendChild(centerArea);
 
     // Player hand with play button
@@ -124,95 +240,102 @@ function renderGameState(gameState) {
     playerHandDiv.className = 'hand player';
     playerHandDiv.id = 'player-hand';
 
-    playerHand.forEach((card, index) => {
+    hand.forEach((card, index) => {
         const cardEl = createCardElement(card);
         cardEl.dataset.index = index;
-
-        // Click to select/deselect
-        cardEl.addEventListener('click', () => toggleCardSelection(cardEl, index));
-
+        if (card.selected) {
+            cardEl.classList.add('selected');
+        }
+        cardEl.addEventListener('click', (e) => {
+            const idx = parseInt(e.currentTarget.dataset.index, 10);
+            toggleCardSelection(idx);
+        });
         playerHandDiv.appendChild(cardEl);
     });
 
     handContainer.appendChild(playerHandDiv);
     playerControls.appendChild(handContainer);
 
-    // Initialize SortableJS for drag reordering
-    new Sortable(playerHandDiv, {
-        animation: 150,
-        ghostClass: 'dragging',
-        onEnd: function(evt) {
-            const oldIndex = evt.oldIndex;
-            const newIndex = evt.newIndex;
+    initSortable(playerHandDiv);
 
-            if (oldIndex !== newIndex) {
-                // Reorder the playerHand array
-                const [movedCard] = playerHand.splice(oldIndex, 1);
-                playerHand.splice(newIndex, 0, movedCard);
-
-                // Update selected cards indices
-                selectedCards = selectedCards.map(idx => {
-                    if (idx === oldIndex) return newIndex;
-                    if (oldIndex < newIndex) {
-                        if (idx > oldIndex && idx <= newIndex) return idx - 1;
-                    } else {
-                        if (idx >= newIndex && idx < oldIndex) return idx + 1;
-                    }
-                    return idx;
-                });
-
-                // Update data-index attributes
-                playerHandDiv.querySelectorAll('.card').forEach((el, i) => {
-                    el.dataset.index = i;
-                });
-
-                // Re-validate after reorder
-                updatePlayButtonState();
-            }
-        }
-    });
-
-    // Play button
     const playBtn = document.createElement('button');
     playBtn.id = 'play-btn';
     playBtn.textContent = 'Play Selected';
     playBtn.disabled = true;
-    playBtn.addEventListener('click', () => attemptPlayMove());
+    playBtn.addEventListener('click', attemptPlayMove);
     playerControls.appendChild(playBtn);
 
     cardTable.appendChild(playerControls);
 
-    // Status message container
     const statusMsg = document.createElement('div');
     statusMsg.id = 'status-message';
     cardTable.appendChild(statusMsg);
 
-    // Check for winner
-    if (gameState.winner !== null) {
-        showWinner(gameState.winner);
+    // Animate drawn cards
+    for (const card of cardsToAdd) {
+        await animateNewCardTo(playerHandDiv);
+        hand.push(card);
+        const cardEl = createCardElement(card);
+        cardEl.dataset.index = hand.length - 1;
+        cardEl.addEventListener('click', (e) => {
+            const idx = parseInt(e.currentTarget.dataset.index, 10);
+            toggleCardSelection(idx);
+        });
+        playerHandDiv.appendChild(cardEl);
     }
 
-    // Indicate current player
-    if (gameState.current_player === 0) {
+    for (let i = 0; i < opponentCardsToAdd; i++) {
+        await animateNewCardTo(opponentHand);
+        const cardEl = createCardElement(null, true);
+        cardEl.style.cursor = 'default';
+        opponentHand.appendChild(cardEl);
+    }
+
+    // Update opponent hand size
+    opponentHandSize = gameState.opponent_hand.length;
+
+    updatePlayButtonState();
+
+    if (gameState.winner !== null) {
+        showWinner(gameState.winner);
+    } else if (gameState.current_player === 0) {
         showStatus("Your turn!");
-        setTimeout(() => hideStatus(), 1500);
+        setTimeout(hideStatus, 1500);
     } else {
         showStatus("Opponent's turn...");
-        setTimeout(() => {
-            opponentTurn();
-        }, 1000);
+        setTimeout(opponentTurn, 1000);
     }
 }
 
-function toggleCardSelection(cardEl, index) {
-    const selectedIndex = selectedCards.indexOf(index);
+function initSortable(playerHandDiv) {
+    new Sortable(playerHandDiv, {
+        animation: 150,
+        ghostClass: 'dragging',
+        onEnd: function (evt) {
+            if (evt.oldIndex === evt.newIndex) return;
 
-    if (selectedIndex === -1) {
-        selectedCards.push(index);
-        cardEl.classList.add('selected');
-    } else {
-        selectedCards.splice(selectedIndex, 1);
-        cardEl.classList.remove('selected');
+            // Reorder the hand array
+            const [movedCard] = hand.splice(evt.oldIndex, 1);
+            hand.splice(evt.newIndex, 0, movedCard);
+
+            // Update data-index attributes
+            playerHandDiv.querySelectorAll('.card').forEach((el, i) => {
+                el.dataset.index = i;
+            });
+
+            updatePlayButtonState();
+        }
+    });
+}
+
+// --- Selection & Validation ---
+
+function toggleCardSelection(index) {
+    hand[index].selected = !hand[index].selected;
+
+    const cardEl = document.querySelector(`#player-hand .card[data-index="${index}"]`);
+    if (cardEl) {
+        cardEl.classList.toggle('selected', hand[index].selected);
     }
 
     updatePlayButtonState();
@@ -220,203 +343,90 @@ function toggleCardSelection(cardEl, index) {
 
 function updatePlayButtonState() {
     const playBtn = document.getElementById('play-btn');
+    if (!playBtn) return;
 
-    if (selectedCards.length === 0) {
+    const selected = getSelectedCards();
+    if (selected.length === 0) {
         playBtn.disabled = true;
         return;
     }
 
-    // Get selected cards in hand order (left to right)
-    const sortedIndices = [...selectedCards].sort((a, b) => a - b);
-    const cardsToPlay = sortedIndices.map(i => playerHand[i]);
-
-    // Build Python-compatible card list and validate
-    const cardListStr = cardsToPlay.map(c =>
-        `player.Card(suit=player.Suit.${c.suit}, cvalue=player.CardValue.${c.value})`
-    ).join(', ');
-
-    const isValid = pyodide.runPython(`player.validate_move([${cardListStr}])`);
+    const isValid = pyodide.runPython(`player.validate_move([${cardsToPythonExpr(selected)}])`);
     playBtn.disabled = !isValid;
 }
 
-
-function rerenderPlayerHand() {
-    const playerHandDiv = document.getElementById('player-hand');
-    playerHandDiv.innerHTML = '';
-
-    playerHand.forEach((card, index) => {
-        const cardEl = createCardElement(card);
-        cardEl.dataset.index = index;
-
-        if (selectedCards.includes(index)) {
-            cardEl.classList.add('selected');
-        }
-
-        cardEl.addEventListener('click', () => toggleCardSelection(cardEl, index));
-
-        playerHandDiv.appendChild(cardEl);
-    });
-
-    // Re-initialize SortableJS
-    new Sortable(playerHandDiv, {
-        animation: 150,
-        ghostClass: 'dragging',
-        onEnd: function(evt) {
-            const oldIndex = evt.oldIndex;
-            const newIndex = evt.newIndex;
-
-            if (oldIndex !== newIndex) {
-                const [movedCard] = playerHand.splice(oldIndex, 1);
-                playerHand.splice(newIndex, 0, movedCard);
-
-                selectedCards = selectedCards.map(idx => {
-                    if (idx === oldIndex) return newIndex;
-                    if (oldIndex < newIndex) {
-                        if (idx > oldIndex && idx <= newIndex) return idx - 1;
-                    } else {
-                        if (idx >= newIndex && idx < oldIndex) return idx + 1;
-                    }
-                    return idx;
-                });
-
-                playerHandDiv.querySelectorAll('.card').forEach((el, i) => {
-                    el.dataset.index = i;
-                });
-
-                // Re-validate after reorder
-                updatePlayButtonState();
-            }
-        }
-    });
-}
+// --- Player Actions ---
 
 async function attemptPlayMove() {
-    if (selectedCards.length === 0) return;
+    const selected = getSelectedCards();
+    if (selected.length === 0) return;
 
-    // Get selected cards in hand order (left to right)
-    const sortedIndices = [...selectedCards].sort((a, b) => a - b);
-    const cardsToPlay = sortedIndices.map(i => playerHand[i]);
+    const discardRect = document.getElementById('discard').getBoundingClientRect();
 
-    // Animate cards to discard one by one
-    const discardEl = document.getElementById('discard');
-    const discardRect = discardEl.getBoundingClientRect();
-
-    for (let i = 0; i < sortedIndices.length; i++) {
-        const cardIndex = sortedIndices[i];
-        const cardEl = document.querySelector(`#player-hand .card[data-index="${cardIndex}"]`);
-
-        if (cardEl) {
-            await animateCardToDiscard(cardEl, discardRect);
+    // Animate cards in selection order (order in hand array)
+    for (let i = 0; i < hand.length; i++) {
+        if (hand[i].selected) {
+            const cardEl = document.querySelector(`#player-hand .card[data-index="${i}"]`);
+            if (cardEl) {
+                await animateCardAsync(cardEl, discardRect);
+            }
         }
     }
 
-    // Build Python-compatible card list
-    const cardListStr = cardsToPlay.map(c =>
-        `player.Card(suit=player.Suit.${c.suit}, cvalue=player.CardValue.${c.value})`
-    ).join(', ');
-
-    // Attempt the move
-    const result = pyodide.runPython(`player.attempt_move([${cardListStr}])`);
+    const result = pyodide.runPython(`player.attempt_move([${cardsToPythonExpr(selected)}])`);
 
     if (result) {
-        // Move succeeded, refresh game state
-        const gameStateJson = pyodide.runPython('player.get_game_state_json()');
-        renderGameState(JSON.parse(gameStateJson));
+        refreshGameState();
     } else {
-        // Move failed, show error
         showStatus("Invalid move!");
         setTimeout(() => {
             hideStatus();
-            // Deselect all cards
-            selectedCards = [];
-            rerenderPlayerHand();
-            document.getElementById('play-btn').disabled = true;
+            refreshGameState();
         }, 1500);
     }
 }
 
-async function animateCardToDiscard(cardEl, targetRect) {
-    return new Promise(resolve => {
-        const startRect = cardEl.getBoundingClientRect();
-
-        // Create a clone for animation
-        const clone = cardEl.cloneNode(true);
-        clone.classList.add('animating');
-        clone.style.left = startRect.left + 'px';
-        clone.style.top = startRect.top + 'px';
-        clone.style.width = startRect.width + 'px';
-        clone.style.height = startRect.height + 'px';
-        document.body.appendChild(clone);
-
-        // Hide original
-        cardEl.style.visibility = 'hidden';
-
-        // Trigger animation
-        requestAnimationFrame(() => {
-            clone.style.left = targetRect.left + 'px';
-            clone.style.top = targetRect.top + 'px';
-        });
-
-        // Cleanup after animation
-        setTimeout(() => {
-            clone.remove();
-            resolve();
-        }, 400);
-    });
-}
-
 async function drawCard() {
-    // Animate card from deck
-    const deckEl = document.getElementById('deck');
-    const playerHandDiv = document.getElementById('player-hand');
-    const deckRect = deckEl.getBoundingClientRect();
-    const handRect = playerHandDiv.getBoundingClientRect();
-
-    // Create animated card back
-    const animCard = createCardElement(null, true);
-    animCard.classList.add('animating');
-    animCard.style.left = deckRect.left + 'px';
-    animCard.style.top = deckRect.top + 'px';
-    animCard.style.width = '80px';
-    animCard.style.height = '112px';
-    document.body.appendChild(animCard);
-
-    // Animate to hand
-    requestAnimationFrame(() => {
-        animCard.style.left = (handRect.left + handRect.width / 2) + 'px';
-        animCard.style.top = handRect.top + 'px';
-    });
-
-    await new Promise(r => setTimeout(r, 400));
-    animCard.remove();
-
-    // Execute draw (pass None to attempt_move)
     pyodide.runPython('player.attempt_move(None)');
-
-    // Refresh game state
-    const gameStateJson = pyodide.runPython('player.get_game_state_json()');
-    renderGameState(JSON.parse(gameStateJson));
+    await refreshGameState();
 }
 
-function opponentTurn() {
-    // Simple AI: get legal moves and pick one
-    const legalMovesJson = pyodide.runPython('player.get_legal_moves_json()');
-    const legalMoves = JSON.parse(legalMovesJson);
+// --- Opponent Actions ---
 
-    // Switch current player context (would need backend support)
-    // For now, just advance the turn automatically
+async function opponentTurn() {
     showStatus("Opponent is thinking...");
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-    setTimeout(() => {
-        // The opponent plays - this needs proper backend support
-        // For demo, just draw a card
-        pyodide.runPython('player.random_move()');
+    const moveJson = pyodide.runPython('player.random_move()');
+    const cardsPlayed = JSON.parse(moveJson);
 
-        hideStatus();
-        const gameStateJson = pyodide.runPython('player.get_game_state_json()');
-        renderGameState(JSON.parse(gameStateJson));
-    }, 1500);
+    hideStatus();
+
+    // Animate played cards before refreshing state
+    if (cardsPlayed !== null) {
+        const discardRect = document.getElementById('discard').getBoundingClientRect();
+        for (const card of cardsPlayed) {
+            await animateOpponentCard(card, discardRect);
+        }
+    }
+
+    await refreshGameState();
 }
+
+async function animateOpponentCard(card, targetRect) {
+    const opponentHand = document.querySelector('.hand.opponent');
+    const cardEl = opponentHand?.querySelector('.card');
+
+    if (!cardEl) return;
+
+    // Flip to face before animating
+    const img = cardEl.querySelector('img');
+    if (img) img.src = getCardImagePath(card);
+
+    await animateCardAsync(cardEl, targetRect);
+}
+
+// --- UI Helpers ---
 
 function showStatus(message) {
     const statusEl = document.getElementById('status-message');
@@ -446,7 +456,6 @@ function showWinner(winnerIndex) {
 
     overlay.addEventListener('click', () => {
         overlay.remove();
-        // Reload for new game
         location.reload();
     });
 }
