@@ -75,10 +75,11 @@ def test_action():
     real_game.deal()
     real_game.print_game_state()
     results = []
-    for i in range(20):
+    for i in range(1):
         random.seed(i)
         game_clone = deepcopy(real_game)
         option_strs = " | ".join([format_move(move) for move in game_clone.legal_moves])
+        print()
         print("From moves: ", option_strs)
         move = mcts_search(
             game_clone,
@@ -92,7 +93,7 @@ def test_action():
     print(totals)
 
 
-test_action()
+# test_action()
 # test_model(random_move)
 
 # test_model(random_move_play_card_bias)
@@ -116,3 +117,8 @@ test_action()
 # bulk_test_models(random_move_play_card_bias, tests=1000)
 
 # bulk_test_models(mcts_search)
+bulk_test_models(
+    mcts_search_wrapper(rollout_mover=random_move),
+    mcts_search_wrapper(rollout_mover=random_move_play_card_bias),
+    10,
+)

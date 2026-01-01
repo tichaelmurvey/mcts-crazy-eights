@@ -28,6 +28,24 @@ def mcts_search_wrapper(
     )
 
 
+class MCTS:
+    def __init__(
+        self,
+        root_game: CrazyEightGame,
+        rollout_mover=random_move,
+        rollout_evaluator=evaluate_state,
+        iterations=500.0,
+        max_time: None | float = None,
+        verbose=False,
+    ):
+        self.root_game = root_game
+        self.rollout_mover = rollout_mover
+        self.rollout_evaluator = rollout_evaluator
+        self.iterations = iterations
+        self.max_time = max_time
+        self.verbose = verbose
+
+
 def mcts_search(
     root_game: CrazyEightGame,
     rollout_mover=random_move,
@@ -36,15 +54,13 @@ def mcts_search(
     max_time: None | float = None,
     verbose=False,
 ):
-    root_node = MCTSNode(root_game, root_game.current_player)
+    root_node = MCTSNode(deepcopy(root_game), root_game.current_player)
     start_time = time.time()
 
     i = 0
     while i < iterations:
 
-        leaf = root_node.select()
-        winner = leaf.rollout(rollout_mover, rollout_evaluator)
-        leaf.backprop(winner)
+        root_node.select()
 
         if max_time and time.time() - start_time > max_time:
             break
@@ -86,8 +102,10 @@ class MCTSNode:
         player: Player,
         parent=None,
         action: Move | None = None,
+        rollout_mover=random_move,
+        evaluator=evaluate_state,
     ) -> None:
-        self.game = deepcopy(game)
+        self.game = game
         self.parent = parent
         self.action = action
         self.action_player = player
@@ -98,15 +116,18 @@ class MCTSNode:
         self.children = []
         self.max_depth = 0
         self.game_ends_reached = 0
+        self.rollout_mover = rollout_mover
+        self.evaluator = evaluator
 
     def best_child(self):
         for child in self.children:
             if child.visits == 0:
                 return child
+        log_visits = math.log(self.visits)
 
         def ucb(child):
             return child.wins / child.visits + EXPLORE_PARAM * math.sqrt(
-                math.log(self.visits) / child.visits
+                log_visits / child.visits
             )
 
         return max(self.children, key=ucb)
@@ -114,21 +135,22 @@ class MCTSNode:
     def is_fully_expanded(self):
         return len(self.untried_actions) == 0
 
-    def select(self) -> MCTSNode:
+    def select(self):
         if self.game.winner is not None:
-            return self
+            self.backprop(self.game.winner)
+            return
 
         if not self.is_fully_expanded():
-            return self.expand()
+            self.expand()
+            return
 
-        return self.best_child().select()
+        self.best_child().select()
 
-    def expand(self) -> MCTSNode:
+    def expand(self):
         if self.game.winner is not None:
             raise Exception("Attempted to expand node with winner")
-
-        action = random.choice(self.untried_actions)
-        self.untried_actions.remove(action)
+        random.shuffle(self.untried_actions)
+        action = self.untried_actions.pop()
         child_game = deepcopy(self.game)
         action_player = child_game.current_player
         child_game.resolve_move(action)
@@ -136,24 +158,27 @@ class MCTSNode:
             child_game, parent=self, action=action, player=action_player
         )
         self.children.append(new_child)
-        return new_child
+        new_child.rollout()
 
-    def rollout(self, mover=random_move, evaluator=evaluate_state) -> float:
+    def rollout(self):
         rolled_game = deepcopy(self.game)
         rollout_turns = 0
         while True:
             if rolled_game.winner is not None:
-                return 1 if rolled_game.winner == 0 else -1
+                self.backprop(1 if rolled_game.winner == 0 else -1)
+                return
+
             if rollout_turns > ROLLOUT_TURN_LIMIT:
-                return evaluator(rolled_game)
+                self.backprop(self.evaluator(rolled_game))
+                return
+
             rolled_game.get_legal_moves()
-            move = mover(rolled_game)
+            move = self.rollout_mover(rolled_game)
             rolled_game.resolve_move(move)
             rollout_turns += 1
 
     def backprop(self, winner: float, depth: int = 0):
         self.visits += 1
-        self.game_ends_reached
         self.max_depth = max(depth, self.max_depth)
 
         if winner == 1.0 or winner == -1.0:

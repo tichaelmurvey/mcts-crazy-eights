@@ -35,12 +35,16 @@ class CrazyEightGame:
             return
         legal_moves: list[Move] = ["draw"]
 
+        # Same suit (or crazy)
         for active_card in self.current_player.hand:
             if (
                 active_card.suit == self.top_card.suit
                 or active_card.cvalue.value == self.current_player.crazy
             ):
+                # single card play option
                 legal_moves.append([active_card])
+
+                # get cards which match
                 cardset = list(
                     filter(
                         lambda card, ac=active_card: card.cvalue == ac.cvalue
@@ -48,6 +52,8 @@ class CrazyEightGame:
                         self.current_player.hand,
                     )
                 )
+
+                # get permutations of those cards and append to playable card
                 for i in range(len(cardset)):
                     cardsets = [
                         [active_card] + list(move)
@@ -55,13 +61,7 @@ class CrazyEightGame:
                     ]
                     legal_moves += cardsets
 
-                cardset = list(
-                    filter(
-                        lambda card: card.cvalue == self.top_card.cvalue,  # type: ignore
-                        self.current_player.hand,
-                    )
-                )
-
+        # Same value (card number)
         same_val = list(
             filter(
                 lambda card: card.cvalue == self.top_card.cvalue,  # type: ignore
@@ -69,8 +69,10 @@ class CrazyEightGame:
             )
         )
 
+        # these can be played in any order, so get all permutations
         for i in range(len(same_val)):
             legal_moves += [list(move) for move in permutations(same_val, i + 1)]
+
         self.legal_moves = legal_moves
 
     def deal(self):
@@ -89,9 +91,7 @@ class CrazyEightGame:
                     self.discard = [new_discard]
                 else:
                     return
-
             player.hand.append(self.deck.pop())
-        player.hand.sort(key=lambda card: card.cvalue)
 
     def resolve_move(self, move: Move) -> None:
         if isinstance(move, str) or len(move) == 0:
@@ -122,12 +122,7 @@ class CrazyEightGame:
                 self.draw_n(self.next_player(), 5)
 
     def next_player(self):
-        player_idx = self.players.index(self.current_player)
-
-        next_player_idx = player_idx + 1
-        if next_player_idx >= len(self.players):
-            next_player_idx = 0
-        return self.players[next_player_idx]
+        return self.players[(self.current_player.idx + 1) % len(self.players)]
 
     def advance_turn(self):
         self.current_player = self.next_player()
@@ -135,7 +130,7 @@ class CrazyEightGame:
 
     def reduce_crazy(self):
         if self.current_player.crazy == CardValue.ACE:
-            self.winner = self.players.index(self.current_player)
+            self.winner = self.current_player.idx
             return
 
         self.current_player.crazy -= 1
@@ -157,6 +152,8 @@ class CrazyEightGame:
             print()
         print(f"Deck size: {len(self.deck)}")
         print(f"Discard size: {len(self.discard)}")
+        print(f"Current turn: {self.turn_count}")
+        print(f"Winner: {self.winner}")
         if self.top_card:
             print(
                 f"Discard top card: {self.top_card.cvalue.name} of {self.top_card.suit.name}"
@@ -164,7 +161,7 @@ class CrazyEightGame:
 
     def print_legal_moves(self):
         print("====== LEGAL MOVES =====")
-        print(f"Current player: {self.players.index(self.current_player)}")
+        print(f"Current player: {self.current_player.idx}")
         for move in self.legal_moves:
             move_str = ""
             if isinstance(move, str):

@@ -7,6 +7,9 @@ HAND_WEIGHT = 1
 def evaluate_state(game: CrazyEightGame) -> float:
     player = game.players[0]
     opp = game.players[1]
+    if len(opp.hand) == 0 or len(player.hand) == 0:
+        game.print_game_state()
+        raise Exception("Somehow evaluate_state got weird gamestate.")
     crazy_diff = (opp.crazy - player.crazy) / game.crazy
     hand_diff = 1 / len(player.hand) - 1 / len(opp.hand)
 
