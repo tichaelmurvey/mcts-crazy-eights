@@ -1,6 +1,13 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import NamedTuple, Tuple
+from typing import TYPE_CHECKING, Callable, Literal
+
+from crazy_eight.card import Card
+
+
+if TYPE_CHECKING:
+    from crazy_eight.game_env import CrazyEightGame
 
 
 class Suit(Enum):
@@ -27,15 +34,11 @@ class CardValue(IntEnum):
 
 
 @dataclass
-class Card:
-    suit: Suit
-    cvalue: CardValue
-
-    def to_dict(self):
-        return {"suit": self.suit.name, "value": self.cvalue.name}
-
-
-@dataclass
 class Player:
     hand: list[Card]
     crazy: int
+    idx: int
+
+
+type Move = list[Card] | Literal["draw"]
+type Model = Callable[[CrazyEightGame, int], Move]

@@ -1,8 +1,7 @@
+from __future__ import annotations
 from itertools import permutations, product
 from random import shuffle
-from typing import Literal
-
-from crazy_eight.types import Card, CardValue, Player, Suit
+from crazy_eight.types import Card, CardValue, Move, Player, Suit
 
 
 class CrazyEightGame:
@@ -13,12 +12,14 @@ class CrazyEightGame:
     current_player: Player
     draw_two_mult: int
     winner: int | None
-    legal_moves: list[list[Card]]
+    legal_moves: list[Move]
     crazy: int
 
     def __init__(self, n_players: int = 2, crazy: int = 8) -> None:
         self.crazy = crazy
-        self.players = [Player(hand=[], crazy=self.crazy) for _ in range(n_players)]
+        self.players = [
+            Player(hand=[], crazy=self.crazy, idx=i) for i in range(n_players)
+        ]
         self.current_player = self.players[0]
         self.deck = setup_deck()
         self.discard = []
@@ -26,12 +27,13 @@ class CrazyEightGame:
         self.winner = None
         self.legal_moves = []
         self.top_card = None
+        self.turn_count = 0
 
     def get_legal_moves(self):
-        legal_moves: list[list[Card]] = []
         if self.top_card is None:
             self.legal_moves = []
             return
+        legal_moves: list[Move] = ["draw"]
 
         for active_card in self.current_player.hand:
             if (
@@ -55,21 +57,20 @@ class CrazyEightGame:
 
                 cardset = list(
                     filter(
-                        lambda card: card.cvalue == self.top_card.cvalue,
+                        lambda card: card.cvalue == self.top_card.cvalue,  # type: ignore
                         self.current_player.hand,
                     )
                 )
 
         same_val = list(
             filter(
-                lambda card: card.cvalue == self.top_card.cvalue,
+                lambda card: card.cvalue == self.top_card.cvalue,  # type: ignore
                 self.current_player.hand,
             )
         )
 
         for i in range(len(same_val)):
             legal_moves += [list(move) for move in permutations(same_val, i + 1)]
-
         self.legal_moves = legal_moves
 
     def deal(self):
@@ -77,6 +78,7 @@ class CrazyEightGame:
             self.draw_n(player, self.crazy)
         self.discard.append(self.deck.pop())
         self.top_card = self.discard[-1]
+        self.get_legal_moves()
 
     def draw_n(self, player: Player, num_cards: int):
         for _ in range(num_cards):
@@ -91,11 +93,12 @@ class CrazyEightGame:
             player.hand.append(self.deck.pop())
         player.hand.sort(key=lambda card: card.cvalue)
 
-    def resolve_move(self, move: list[Card] | None):
-        if move is None:
+    def resolve_move(self, move: Move) -> None:
+        if isinstance(move, str) or len(move) == 0:
             self.draw_n(self.current_player, 1)
         else:
             self.play_cards(move)
+        self.turn_count += 1
         self.advance_turn()
 
     def play_cards(self, cards: list[Card]):
@@ -128,6 +131,7 @@ class CrazyEightGame:
 
     def advance_turn(self):
         self.current_player = self.next_player()
+        self.get_legal_moves()
 
     def reduce_crazy(self):
         if self.current_player.crazy == CardValue.ACE:
@@ -153,17 +157,21 @@ class CrazyEightGame:
             print()
         print(f"Deck size: {len(self.deck)}")
         print(f"Discard size: {len(self.discard)}")
-        print(
-            f"Discard top card: {self.top_card.cvalue.name} of {self.top_card.suit.name}"
-        )
+        if self.top_card:
+            print(
+                f"Discard top card: {self.top_card.cvalue.name} of {self.top_card.suit.name}"
+            )
 
     def print_legal_moves(self):
         print("====== LEGAL MOVES =====")
         print(f"Current player: {self.players.index(self.current_player)}")
         for move in self.legal_moves:
             move_str = ""
-            for card in move:
-                move_str += f"{card.cvalue.name} of {card.suit.name}, "
+            if isinstance(move, str):
+                move_str = "Draw Card"
+            else:
+                for card in move:
+                    move_str += f"{card.cvalue.name} of {card.suit.name}, "
             print(move_str)
 
 
