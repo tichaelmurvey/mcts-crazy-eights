@@ -2,7 +2,7 @@ let pyodide = null;
 let opponentHandSize = 0;
 
 const ANIMATION_DURATION = 400;
-
+const HIDE_OPPONENT_HAND = false;
 // Hand object - source of truth for player's hand in JS
 // Each entry: { suit, value, selected }
 let hand = [];
@@ -187,6 +187,7 @@ async function animateNewCardTo(targetEl) {
 async function renderGameState(gameState, skipAnimations = false) {
     // Sync hand and get cards to add
     const cardsToAdd = skipAnimations ? [] : syncHand(gameState.player_hand);
+    const opponentCards = gameState.opponent_hand
     const opponentCardsToAdd = skipAnimations ? 0 : Math.max(0, gameState.opponent_hand.length - opponentHandSize);
     const opponentCardsToShow = gameState.opponent_hand.length - opponentCardsToAdd;
 
@@ -202,8 +203,8 @@ async function renderGameState(gameState, skipAnimations = false) {
     // Opponent hand (card backs)
     const opponentHand = document.createElement('div');
     opponentHand.className = 'hand opponent';
-    for (let i = 0; i < opponentCardsToShow; i++) {
-        const card = createCardElement(null, true);
+    for (let i = 0; i < opponentCards.length; i++) {
+        const card = createCardElement(opponentCards[i], HIDE_OPPONENT_HAND);
         card.style.cursor = 'default';
         opponentHand.appendChild(card);
     }
@@ -282,13 +283,6 @@ async function renderGameState(gameState, skipAnimations = false) {
             toggleCardSelection(idx);
         });
         playerHandDiv.appendChild(cardEl);
-    }
-
-    for (let i = 0; i < opponentCardsToAdd; i++) {
-        await animateNewCardTo(opponentHand);
-        const cardEl = createCardElement(null, true);
-        cardEl.style.cursor = 'default';
-        opponentHand.appendChild(cardEl);
     }
 
     // Update opponent hand size
@@ -387,7 +381,7 @@ async function attemptPlayMove() {
 }
 
 async function drawCard() {
-    pyodide.runPython('player.attempt_move(None)');
+    pyodide.runPython('player.attempt_move("draw")');
     await refreshGameState();
 }
 
@@ -397,7 +391,7 @@ async function opponentTurn() {
     showStatus("Opponent is thinking...");
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    const moveJson = pyodide.runPython('player.random_move()');
+    const moveJson = pyodide.runPython('player.model_move()');
     const cardsPlayed = JSON.parse(moveJson);
 
     hideStatus();

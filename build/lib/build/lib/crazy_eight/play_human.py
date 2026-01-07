@@ -1,39 +1,7 @@
 import random
+from crazy_eight.card import format_card, format_move
 from crazy_eight.game_env import CrazyEightGame
-from crazy_eight.types import Card
-
-
-def format_card(card: Card) -> str:
-    """Format a card for display."""
-    suit_symbols = {
-        "HEARTS": "♥",
-        "SPADES": "♠",
-        "DIAMONDS": "♦",
-        "CLUBS": "♣",
-    }
-    value_display = {
-        "ACE": "A",
-        "TWO": "2",
-        "THREE": "3",
-        "FOUR": "4",
-        "FIVE": "5",
-        "SIX": "6",
-        "SEVEN": "7",
-        "EIGHT": "8",
-        "NINE": "9",
-        "TEN": "10",
-        "JACK": "J",
-        "QUEEN": "Q",
-        "KING": "K",
-    }
-    symbol = suit_symbols.get(card.suit.name, card.suit.name)
-    value = value_display.get(card.cvalue.name, card.cvalue.name)
-    return f"{value}{symbol}"
-
-
-def format_move(move: list[Card]) -> str:
-    """Format a move (list of cards) for display."""
-    return ", ".join(format_card(card) for card in move)
+from crazy_eight.types import Card, Move
 
 
 def print_game_state(game: CrazyEightGame, human_player_idx: int):
@@ -64,12 +32,12 @@ def print_game_state(game: CrazyEightGame, human_player_idx: int):
     print("=" * 50)
 
 
-def get_human_move(game: CrazyEightGame) -> list[Card] | None:
+def get_human_move(game: CrazyEightGame) -> Move:
     """Get move input from human player."""
     if not game.legal_moves:
         print("No legal moves available. You must draw a card.")
         input("Press Enter to draw...")
-        return None
+        return "draw"
 
     print("\nLegal moves:")
     for i, move in enumerate(game.legal_moves):
@@ -80,7 +48,7 @@ def get_human_move(game: CrazyEightGame) -> list[Card] | None:
         choice = input("\nYour choice: ").strip().lower()
 
         if choice == "d":
-            return None
+            return "draw"
 
         try:
             idx = int(choice)
@@ -94,10 +62,10 @@ def get_human_move(game: CrazyEightGame) -> list[Card] | None:
             print("Invalid input. Enter a number or 'd' to draw.")
 
 
-def get_computer_move(game: CrazyEightGame) -> list[Card] | None:
+def get_computer_move(game: CrazyEightGame) -> Move:
     """Get a random move for the computer player."""
     if not game.legal_moves:
-        return None
+        raise Exception("Error: No legal moves found")
     return random.choice(game.legal_moves)
 
 
